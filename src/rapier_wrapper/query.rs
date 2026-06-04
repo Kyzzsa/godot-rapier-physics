@@ -339,10 +339,11 @@ impl PhysicsEngine {
                             if contact.dist <= 0.0 {
                                 result.toi = 0.0;
                                 result.collided = true;
-                                result.normal1 = shape_info1.transform.rotation * contact.normal1;
-                                result.normal2 = shape_info2.transform.rotation * contact.normal2;
-                                result.pixel_witness1 = shape_info1.transform * contact.point1;
-                                result.pixel_witness2 = shape_info2.transform * contact.point2;
+                                // parry::query::contact() returns results in world space
+                                result.normal1 = contact.normal1;
+                                result.normal2 = contact.normal2;
+                                result.pixel_witness1 = contact.point1;
+                                result.pixel_witness2 = contact.point2;
                             }
                         }
                         Err(err) => {
@@ -370,6 +371,7 @@ impl PhysicsEngine {
                         }
                         result.collided = true;
                         result.toi = hit.time_of_impact;
+                        // parry::query::cast_shapes() returns results in each body's local space
                         result.normal1 = shape_info1.transform.rotation * hit.normal1;
                         result.normal2 = shape_info2.transform.rotation * hit.normal2;
                         result.pixel_witness1 = shape_info1.transform * hit.witness1;
@@ -593,6 +595,7 @@ impl PhysicsEngine {
                                 .contact(&pos12, shared_shape.as_ref(), collider.shape(), margin)
                                 && let Some(contact) = contact
                             {
+                                // parry::query::QueryDispatcher::cast_shapes() returns results in each body's local space
                                 result.normal1 = shape_transform.rotation * contact.normal1;
                                 result.normal2 = collider.position().rotation * contact.normal2;
                                 result.pixel_witness1 = shape_transform * contact.point1;
@@ -664,14 +667,15 @@ impl PhysicsEngine {
                         result.toi_unsafe = hit.time_of_impact;
                         result.collider = collider_handle;
                         result.user_data = physics_world.get_collider_user_data(collider_handle);
+                        // parry::query::QueryDispatcher::cast_shapes() returns results in each body's local space
+                        result.normal1 = shape_transform.rotation * hit.normal1;
+                        result.pixel_witness1 = shape_transform * hit.witness1;
                         if let Some(collider) = physics_world
                             .physics_objects
                             .collider_set
                             .get(collider_handle)
                         {
-                            result.normal1 = shape_transform.rotation * hit.normal1;
                             result.normal2 = collider.position().rotation * hit.normal2;
-                            result.pixel_witness1 = shape_transform * hit.witness1;
                             result.pixel_witness2 = collider.position() * hit.witness2;
                             // the time of impact isn't exact. Compute unsafe time of impact.
                             if needs_exact {
