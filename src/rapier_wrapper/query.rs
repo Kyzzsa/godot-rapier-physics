@@ -563,7 +563,7 @@ impl PhysicsEngine {
                 filter.predicate = Some(&predicate);
                 let velocity_size = shape_vel.length();
                 if velocity_size < DEFAULT_EPSILON {
-                    for (collider_handle, _collider) in physics_world
+                    for (collider_handle, collider) in physics_world
                         .physics_objects
                         .broad_phase
                         .as_query_pipeline(
@@ -582,31 +582,23 @@ impl PhysicsEngine {
                         result.toi = 0.0;
                         result.collider = collider_handle;
                         result.user_data = physics_world.get_collider_user_data(collider_handle);
-                        if let Some(collider) = physics_world
+                        let pos12 = shape_transform.inv_mul(collider.position());
+                        if let Ok(contact) = physics_world
                             .physics_objects
-                            .collider_set
-                            .get(collider_handle)
+                            .narrow_phase
+                            .query_dispatcher()
+                            .contact(&pos12, shared_shape.as_ref(), collider.shape(), margin)
+                            && let Some(contact) = contact
                         {
-                            let pos12 = shape_transform.inv_mul(collider.position());
-                            if let Ok(contact) = physics_world
-                                .physics_objects
-                                .narrow_phase
-                                .query_dispatcher()
-                                .contact(&pos12, shared_shape.as_ref(), collider.shape(), margin)
-                                && let Some(contact) = contact
-                            {
-                                // parry::query::QueryDispatcher::cast_shapes() returns results in each body's local space
-                                result.normal1 = shape_transform.rotation * contact.normal1;
-                                result.normal2 = collider.position().rotation * contact.normal2;
-                                result.pixel_witness1 = shape_transform * contact.point1;
-                                result.pixel_witness2 = collider.position() * contact.point2;
-                            } else {
-                                godot_error!("contact error");
-                            }
+                            // parry::query::QueryDispatcher::cast_shapes() returns results in each body's local space
+                            result.normal1 = shape_transform.rotation * contact.normal1;
+                            result.normal2 = collider.position().rotation * contact.normal2;
+                            result.pixel_witness1 = shape_transform * contact.point1;
+                            result.pixel_witness2 = collider.position() * contact.point2;
+                            results.push(result);
                         } else {
-                            godot_error!("collider not found");
+                            godot_error!("contact error");
                         }
-                        results.push(result);
                     }
                 } else {
                     let shape_cast_options = ShapeCastOptions {
@@ -694,10 +686,10 @@ impl PhysicsEngine {
                                     result.toi_unsafe += (distance + 0.001) / velocity_size;
                                 }
                             }
+                            results.push(result);
                         } else {
                             godot_error!("collider not found");
                         }
-                        results.push(result);
                         cast_excludes.push(collider_handle);
                         if needs_exact || results.len() >= MAX_SHAPE_CAST_RESULTS {
                             break;
