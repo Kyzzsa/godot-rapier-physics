@@ -339,12 +339,10 @@ impl PhysicsEngine {
                             if contact.dist <= 0.0 {
                                 result.toi = 0.0;
                                 result.collided = true;
-                                result.normal1 = contact.normal1;
-                                result.normal2 = contact.normal2;
-                                result.pixel_witness1 =
-                                    contact.point1 + shape_info1.transform.translation;
-                                result.pixel_witness2 =
-                                    contact.point2 + shape_info2.transform.translation;
+                                result.normal1 = shape_info1.transform.rotation * contact.normal1;
+                                result.normal2 = shape_info2.transform.rotation * contact.normal2;
+                                result.pixel_witness1 = shape_info1.transform * contact.point1;
+                                result.pixel_witness2 = shape_info2.transform * contact.point2;
                             }
                         }
                         Err(err) => {
@@ -372,10 +370,10 @@ impl PhysicsEngine {
                         }
                         result.collided = true;
                         result.toi = hit.time_of_impact;
-                        result.normal1 = hit.normal1;
-                        result.normal2 = hit.normal2;
-                        result.pixel_witness1 = hit.witness1 + shape_info1.transform.translation;
-                        result.pixel_witness2 = hit.witness2 + shape_info2.transform.translation;
+                        result.normal1 = shape_info1.transform.rotation * hit.normal1;
+                        result.normal2 = shape_info2.transform.rotation * hit.normal2;
+                        result.pixel_witness1 = shape_info1.transform * hit.witness1;
+                        result.pixel_witness2 = shape_info2.transform * hit.witness2;
                     }
                     Err(err) => {
                         godot_error!("toi error: {:?}", err);
@@ -595,12 +593,10 @@ impl PhysicsEngine {
                                 .contact(&pos12, shared_shape.as_ref(), collider.shape(), margin)
                                 && let Some(contact) = contact
                             {
-                                result.normal1 = contact.normal1;
-                                result.normal2 = contact.normal2;
-                                result.pixel_witness1 =
-                                    contact.point1 + shape_transform.translation;
-                                result.pixel_witness2 =
-                                    contact.point2 + collider.position().translation;
+                                result.normal1 = shape_transform.rotation * contact.normal1;
+                                result.normal2 = collider.position().rotation * contact.normal2;
+                                result.pixel_witness1 = shape_transform * contact.point1;
+                                result.pixel_witness2 = collider.position() * contact.point2;
                             } else {
                                 godot_error!("contact error");
                             }
@@ -666,20 +662,17 @@ impl PhysicsEngine {
                         result.collided = true;
                         result.toi = hit.time_of_impact;
                         result.toi_unsafe = hit.time_of_impact;
-                        result.normal1 = hit.normal1;
-                        result.normal2 = hit.normal2;
                         result.collider = collider_handle;
                         result.user_data = physics_world.get_collider_user_data(collider_handle);
-                        // Witnesses are both in worldspace
-                        let witness1 = hit.witness1;
-                        let witness2 = hit.witness2;
                         if let Some(collider) = physics_world
                             .physics_objects
                             .collider_set
                             .get(collider_handle)
                         {
-                            result.pixel_witness1 = witness1;
-                            result.pixel_witness2 = witness2;
+                            result.normal1 = shape_transform.rotation * hit.normal1;
+                            result.normal2 = collider.position().rotation * hit.normal2;
+                            result.pixel_witness1 = shape_transform * hit.witness1;
+                            result.pixel_witness2 = collider.position() * hit.witness2;
                             // the time of impact isn't exact. Compute unsafe time of impact.
                             if needs_exact {
                                 let mut hit_transform = shape_transform;
