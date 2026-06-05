@@ -2,6 +2,8 @@ use std::ops::Mul;
 
 use godot::global::godot_error;
 use godot::global::godot_warn;
+use parry::query::DefaultQueryDispatcher;
+use parry::query::QueryDispatcher;
 use rapier::parry;
 use rapier::parry::query::ShapeCastOptions;
 use rapier::parry::query::ShapeCastStatus;
@@ -352,12 +354,12 @@ impl PhysicsEngine {
                     }
                     return result;
                 }
-                let toi_result = parry::query::cast_shapes(
-                    &shape_transform1,
-                    shape_vel1,
+                // use DefaultQueryDispatcher::cast_shapes() instead of parry::query::cast_shapes()
+                // there's currently a bug with the latter function on localizing velocities
+                let toi_result = DefaultQueryDispatcher.cast_shapes(
+                    &shape_transform1.inv_mul(&shape_transform2),
+                    shape_transform1.rotation.inverse() * (shape_vel2 - shape_vel1),
                     shared_shape1.as_ref(),
-                    &shape_transform2,
-                    shape_vel2,
                     shared_shape2.as_ref(),
                     shape_cast_options,
                 );
@@ -371,7 +373,7 @@ impl PhysicsEngine {
                         }
                         result.collided = true;
                         result.toi = hit.time_of_impact;
-                        // parry::query::cast_shapes() returns results in each shape's local space
+                        // DefaultQueryDispatcher.cast_shapes() returns results in each shape's local space
                         result.normal1 = shape_info1.transform.rotation * hit.normal1;
                         result.pixel_witness1 = shape_info1.transform * hit.witness1;
                         result.normal2 = shape_info2.transform.rotation * hit.normal2;
