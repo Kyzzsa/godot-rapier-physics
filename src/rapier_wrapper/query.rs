@@ -341,8 +341,8 @@ impl PhysicsEngine {
                                 result.collided = true;
                                 // parry::query::contact() returns results in world space
                                 result.normal1 = contact.normal1;
-                                result.normal2 = contact.normal2;
                                 result.pixel_witness1 = contact.point1;
+                                result.normal2 = contact.normal2;
                                 result.pixel_witness2 = contact.point2;
                             }
                         }
@@ -371,10 +371,10 @@ impl PhysicsEngine {
                         }
                         result.collided = true;
                         result.toi = hit.time_of_impact;
-                        // parry::query::cast_shapes() returns results in each body's local space
+                        // parry::query::cast_shapes() returns results in each shape's local space
                         result.normal1 = shape_info1.transform.rotation * hit.normal1;
-                        result.normal2 = shape_info2.transform.rotation * hit.normal2;
                         result.pixel_witness1 = shape_info1.transform * hit.witness1;
+                        result.normal2 = shape_info2.transform.rotation * hit.normal2;
                         result.pixel_witness2 = shape_info2.transform * hit.witness2;
                     }
                     Err(err) => {
@@ -469,7 +469,7 @@ impl PhysicsEngine {
                 shape_transform_with_motion.translation += shape_vel * hit.time_of_impact;
             }
         }
-        for (collider_handle, _collider) in physics_world
+        for (_collider_handle, collider) in physics_world
             .physics_objects
             .broad_phase
             .as_query_pipeline(
@@ -483,40 +483,34 @@ impl PhysicsEngine {
             )
             .intersect_shape(shape_transform_with_motion, shared_shape.as_ref())
         {
-            if let Some(collider) = physics_world
+            let mut manifolds: Vec<ContactManifold> = vec![];
+            let pos12 = shape_transform_with_motion.inv_mul(collider.position());
+            let _ = physics_world
                 .physics_objects
-                .collider_set
-                .get(collider_handle)
-            {
-                let mut manifolds: Vec<ContactManifold> = vec![];
-                let pos12 = shape_transform_with_motion.inv_mul(collider.position());
-                let _ = physics_world
-                    .physics_objects
-                    .narrow_phase
-                    .query_dispatcher()
-                    .contact_manifolds(
-                        &pos12,
-                        shared_shape.as_ref(),
-                        collider.shape(),
-                        margin,
-                        &mut manifolds,
-                        &mut None,
-                    );
-                for m in &manifolds {
+                .narrow_phase
+                .query_dispatcher()
+                .contact_manifolds(
+                    &pos12,
+                    shared_shape.as_ref(),
+                    collider.shape(),
+                    margin,
+                    &mut manifolds,
+                    &mut None,
+                );
+            for m in &manifolds {
+                if result_count >= max_results {
+                    break;
+                }
+                for contact in &m.points {
+                    let contact_p1 = shape_transform_with_motion * contact.local_p1;
+                    let contact_p2 = collider.position() * contact.local_p2;
+                    let mut this_contact: WitnessPair = WitnessPair::new();
+                    this_contact.pixel_witness1 = contact_p1;
+                    this_contact.pixel_witness2 = contact_p2;
+                    results.push(this_contact);
+                    result_count += 1;
                     if result_count >= max_results {
                         break;
-                    }
-                    for contact in &m.points {
-                        let contact_p1 = shape_transform_with_motion * contact.local_p1;
-                        let contact_p2 = collider.position() * contact.local_p2;
-                        let mut this_contact: WitnessPair = WitnessPair::new();
-                        this_contact.pixel_witness1 = contact_p1;
-                        this_contact.pixel_witness2 = contact_p2;
-                        results.push(this_contact);
-                        result_count += 1;
-                        if result_count >= max_results {
-                            break;
-                        }
                     }
                 }
             }
@@ -590,10 +584,10 @@ impl PhysicsEngine {
                             .contact(&pos12, shared_shape.as_ref(), collider.shape(), margin)
                             && let Some(contact) = contact
                         {
-                            // parry::query::QueryDispatcher::cast_shapes() returns results in each body's local space
+                            // parry2d::query::query_dispatcher::QueryDispatcher::contact() returns results in each shape's local space
                             result.normal1 = shape_transform.rotation * contact.normal1;
-                            result.normal2 = collider.position().rotation * contact.normal2;
                             result.pixel_witness1 = shape_transform * contact.point1;
+                            result.normal2 = collider.rotation() * contact.normal2;
                             result.pixel_witness2 = collider.position() * contact.point2;
                             results.push(result);
                         } else {
@@ -659,16 +653,20 @@ impl PhysicsEngine {
                         result.toi_unsafe = hit.time_of_impact;
                         result.collider = collider_handle;
                         result.user_data = physics_world.get_collider_user_data(collider_handle);
-                        // parry::query::QueryDispatcher::cast_shapes() returns results in each body's local space
-                        result.normal1 = shape_transform.rotation * hit.normal1;
-                        result.pixel_witness1 = shape_transform * hit.witness1;
+                        // In rapier2d_f64::pipeline::query_pipeline::QueryPipeline::cast_shapes(),
+                        // scanner shape is the second parameter in QueryPipeline::cast_shapes(),
+                        // so the normals and witnesses need to be swapped
+                        // result.pixel_witness1 <- hit.witness2 from local shape's local space with motion applied
+                        // result.pixel_witness2 <- hit.witness1 from global space
+                        result.normal2 = hit.normal1;
+                        result.pixel_witness2 = hit.witness1;
                         if let Some(collider) = physics_world
                             .physics_objects
                             .collider_set
                             .get(collider_handle)
                         {
-                            result.normal2 = collider.position().rotation * hit.normal2;
-                            result.pixel_witness2 = collider.position() * hit.witness2;
+                            result.normal1 = shape_transform.rotation * hit.normal2;
+                            result.pixel_witness1 = shape_transform * hit.witness2 + shape_vel;
                             // the time of impact isn't exact. Compute unsafe time of impact.
                             if needs_exact {
                                 let mut hit_transform = shape_transform;
